@@ -44,16 +44,21 @@ if __name__ == "__main__":
     valid1 = F.interpolate((input > 0.5).float(), (5, 9), mode="bilinear", align_corners=True)
     boundary1 = (valid1 > 0) & (valid1 < 1)
     print (boundary1)
+    assert torch.equal(output2, output1)
 
-    input = torch.randn(16, 128, 256,256).cuda()
+    input = torch.randn(16, 128, 257, 257).cuda()
     with torch.no_grad():
-        for _ in tqdm.tqdm(range(5000)):
-            output1 = F.interpolate(input, (5, 9), mode="bilinear", align_corners=True)
-            valid1 = F.interpolate((input > 0.5).float(), (5, 9), mode="bilinear", align_corners=True)
-            boundary1 = (valid1 > 0) & (valid1 < 1)
+        for _ in tqdm.tqdm(range(1000)):
+            output1 = F.interpolate(input, (257*2-1, 257*2-1), mode="bilinear", align_corners=True)
+            # valid1 = F.interpolate((input > 0.5).float(), (257*2-1, 257*2-1), mode="bilinear", align_corners=True)
+            # boundary1 = (valid1 > 0) & (valid1 < 1)
             torch.cuda.synchronize()
 
-        for _ in tqdm.tqdm(range(5000)):
+        output2 = upsampler(input)
+        print (output1[0, 0, 0, 0:10])
+        print (output2[0, 0, 0, 0:10])
+
+        for _ in tqdm.tqdm(range(1000)):
             output2 = upsampler(input)
             torch.cuda.synchronize()
 
