@@ -10,7 +10,9 @@ namespace {
 template <typename scalar_t>
 __global__ void upsample2x_bilinear2d_cuda_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,4> input,
-    torch::PackedTensorAccessor32<scalar_t,4> output) {
+    torch::PackedTensorAccessor32<scalar_t,4> output,
+    torch::PackedTensorAccessor32<bool,4> is_boundary,
+    const float balance_value) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     
     const int bn = output.size(0);
@@ -32,34 +34,53 @@ __global__ void upsample2x_bilinear2d_cuda_forward_kernel(
 
     if (skip_x && skip_y){
         output[bi][ci][y][x] = input[bi][ci][y/2][x/2];
+        is_boundary[bi][ci][y][x] = false;
         return;
+        
     }else if (skip_x){
-        output[bi][ci][y][x] = (
-            input[bi][ci][(y-1)/2][x/2] + 
-            input[bi][ci][(y+1)/2][x/2]
-        ) / 2.;
+        auto v1 = input[bi][ci][(y-1)/2][x/2];
+        auto v2 = input[bi][ci][(y+1)/2][x/2];
+        output[bi][ci][y][x] = (v1 + v2) / 2.;
+
+        bool flag1 = v1 > balance_value;
+        bool flag2 = v2 > balance_value;
+        if (flag1 == flag2){is_boundary[bi][ci][y][x] = false;}
+        else{is_boundary[bi][ci][y][x] = true;}
         return;
+
     }else if (skip_y){
-        output[bi][ci][y][x] = (
-            input[bi][ci][y/2][(x-1)/2] + 
-            input[bi][ci][y/2][(x+1)/2]
-        ) / 2.;
+        auto v1 = input[bi][ci][y/2][(x-1)/2];
+        auto v2 = input[bi][ci][y/2][(x+1)/2];
+        output[bi][ci][y][x] = (v1 + v2) / 2.;
+
+        bool flag1 = v1 > balance_value;
+        bool flag2 = v2 > balance_value;
+        if (flag1 == flag2){is_boundary[bi][ci][y][x] = false;}
+        else{is_boundary[bi][ci][y][x] = true;}
         return;
+
     }else{
-        output[bi][ci][y][x] = (
-            input[bi][ci][(y-1)/2][(x-1)/2] + 
-            input[bi][ci][(y-1)/2][(x+1)/2] + 
-            input[bi][ci][(y+1)/2][(x-1)/2] + 
-            input[bi][ci][(y+1)/2][(x+1)/2]
-        ) / 4.;
+        auto v1 = input[bi][ci][(y-1)/2][(x-1)/2];
+        auto v2 = input[bi][ci][(y-1)/2][(x+1)/2]; 
+        auto v3 = input[bi][ci][(y+1)/2][(x-1)/2]; 
+        auto v4 = input[bi][ci][(y+1)/2][(x+1)/2];
+        output[bi][ci][y][x] = (v1 + v2 + v3 + v4) / 4.0;
+
+        bool flag1 = v1 > balance_value;
+        bool flag2 = v2 > balance_value;
+        bool flag3 = v3 > balance_value;
+        bool flag4 = v4 > balance_value;
+        if (flag1 == flag2 && flag2 == flag3 && flag3 == flag4){
+            is_boundary[bi][ci][y][x] = false;
+        }else{is_boundary[bi][ci][y][x] = true;}
         return;
     }
 }
 
 } // namespace
 
-torch::Tensor upsample2x_bilinear2d_cuda_forward(
-    const torch::Tensor& input) {
+std::vector<torch::Tensor> upsample2x_bilinear2d_cuda_forward(
+    const torch::Tensor& input, const float balance_value) {
 
     int bn = input.size(0);
     int c = input.size(1);
@@ -67,6 +88,8 @@ torch::Tensor upsample2x_bilinear2d_cuda_forward(
     int w = input.size(3) * 2 - 1;
 
     auto output = torch::empty({bn, c, h, w}, input.type());
+    auto is_boundary = torch::empty(
+        {bn, c, h, w}, torch::ScalarType::Bool).to(input.device());
 
     const int num_kernels = bn * c * h * w;
     const int num_threads = 1024;
@@ -74,12 +97,13 @@ torch::Tensor upsample2x_bilinear2d_cuda_forward(
 
     AT_DISPATCH_FLOATING_TYPES(
         output.scalar_type(), "upsample2x_bilinear2d_cuda_forward", ([&] {
-            auto idata = input.packed_accessor32<scalar_t, 4>();
-            auto odata = output.packed_accessor32<scalar_t, 4>();
-
-            upsample2x_bilinear2d_cuda_forward_kernel<scalar_t><<<blocks, num_threads>>>(
-                idata, odata);
+            upsample2x_bilinear2d_cuda_forward_kernel<scalar_t>
+                <<<blocks, num_threads>>>(
+                    input.packed_accessor32<scalar_t, 4>(), 
+                    output.packed_accessor32<scalar_t, 4>(),
+                    is_boundary.packed_accessor32<bool, 4>(),
+                    balance_value);
     }));
 
-    return output;
+    return {output, is_boundary};
 }

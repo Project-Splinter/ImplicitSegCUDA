@@ -1,19 +1,20 @@
 #include <torch/extension.h>
 #include <vector>
 
-torch::Tensor upsample2x_bilinear2d_cuda_forward(
-    const torch::Tensor& input);
+std::vector<torch::Tensor> upsample2x_bilinear2d_cuda_forward(
+    const torch::Tensor& input, const float balance_value);
 
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
-torch::Tensor upsample2x_bilinear2d_forward(
-    const torch::Tensor& input) {
+
+std::vector<torch::Tensor> upsample2x_bilinear2d_forward(
+    const torch::Tensor& input, const float balance_value) {
       CHECK_INPUT(input);
 
-      return upsample2x_bilinear2d_cuda_forward(input);
+      return upsample2x_bilinear2d_cuda_forward(input, balance_value);
 }
 
 
