@@ -36,7 +36,7 @@ __global__ void upsample2x_bilinear2d_cuda_forward_kernel(
         output[bi][ci][y][x] = input[bi][ci][y/2][x/2];
         is_boundary[bi][ci][y][x] = false;
         return;
-        
+
     }else if (skip_x){
         auto v1 = input[bi][ci][(y-1)/2][x/2];
         auto v2 = input[bi][ci][(y+1)/2][x/2];
@@ -81,15 +81,16 @@ __global__ void upsample2x_bilinear2d_cuda_forward_kernel(
 
 std::vector<torch::Tensor> upsample2x_bilinear2d_cuda_forward(
     const torch::Tensor& input, const float balance_value) {
-
+    
+    torch::Device device = input.device();
     int bn = input.size(0);
     int c = input.size(1);
     int h = input.size(2) * 2 - 1;
     int w = input.size(3) * 2 - 1;
 
     auto output = torch::empty({bn, c, h, w}, input.type());
-    auto is_boundary = torch::empty(
-        {bn, c, h, w}, torch::ScalarType::Bool).to(input.device());
+    auto option = torch::TensorOptions().dtype(torch::ScalarType::Bool).device(device);
+    auto is_boundary = torch::empty({bn, c, h, w}, option);
 
     const int num_kernels = bn * c * h * w;
     const int num_threads = 1024;

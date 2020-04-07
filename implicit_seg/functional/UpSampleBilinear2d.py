@@ -51,18 +51,19 @@ if __name__ == "__main__":
 
     input = torch.randn(16, 128, 257, 257).cuda()
     with torch.no_grad():
-        # for _ in tqdm.tqdm(range(100)):
-        #     output1 = F.interpolate(input, (257*2-1, 257*2-1), mode="bilinear", align_corners=True)
-        #     valid1 = F.interpolate((input > 0.5).float(), (257*2-1, 257*2-1), mode="bilinear", align_corners=True)
-        #     boundary1 = (valid1 > 0) & (valid1 < 1)
-        #     torch.cuda.synchronize()
+        for _ in tqdm.tqdm(range(100)): # 27.42it/s
+            output1 = F.interpolate(input, (257*2-1, 257*2-1), mode="bilinear", align_corners=True)
+            valid1 = F.interpolate((input > 0.5).float(), (257*2-1, 257*2-1), mode="bilinear", align_corners=True)
+            boundary1 = (valid1 > 0) & (valid1 < 1)
+            torch.cuda.synchronize()
 
-        # output2, boundary2 = upsampler(input)
-        # print (boundary1[0, 0, 0, 0:10])
-        # print (boundary2[0, 0, 0, 0:10])
-
-        for _ in tqdm.tqdm(range(100)):
+        for _ in tqdm.tqdm(range(1000)):
             output2, boundary2 = upsampler(input)
             torch.cuda.synchronize()
+
+        output2, boundary2 = upsampler(input)
+        print (boundary1[0, 0, 0, 0:10])
+        print (boundary2[0, 0, 0, 0:10])
+        print (torch.equal(boundary1, boundary2))
 
             
