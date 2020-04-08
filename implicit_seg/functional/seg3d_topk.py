@@ -86,16 +86,16 @@ class Seg3dTopk(nn.Module):
                 occupancys = self.batch_eval(coords, **kwargs)
                 occupancys = occupancys.view(self.batchsize, self.channels, D, H, W)
 
-                # if self.visualize:
-                #     final = F.interpolate(
-                #         occupancys.float(), size=(final_D, final_H, final_W), 
-                #         mode="trilinear", align_corners=True) # here true is correct!
-                #     x = coords[0, :, 0].to("cpu")
-                #     y = coords[0, :, 1].to("cpu")
-                #     z = coords[0, :, 2].to("cpu")
+                if self.visualize:
+                    final = F.interpolate(
+                        occupancys.float(), size=(final_D, final_H, final_W), 
+                        mode="trilinear", align_corners=True) # here true is correct!
+                    x = coords[0, :, 0].to("cpu")
+                    y = coords[0, :, 1].to("cpu")
+                    z = coords[0, :, 2].to("cpu")
                     
-                #     plot_mask3D(
-                #         final[0, 0].to("cpu"), point_coords=(x, y, z))
+                    plot_mask3D(
+                        final[0, 0].to("cpu"), point_coords=(x, y, z))
 
             else:
                 # here true is correct!
