@@ -100,14 +100,14 @@ class Seg2dLossless(nn.Module):
                 occupancys = self.batch_eval(coords, **kwargs)
                 occupancys = occupancys.view(self.batchsize, self.channels, H, W)
 
-                # if self.visualize:
-                #     final = F.interpolate(
-                #         occupancys.float(), size=(final_H, final_W), 
-                #         mode="bilinear", align_corners=True) # here true is correct!
-                #     x = coords[0, :, 0].to("cpu")
-                #     y = coords[0, :, 1].to("cpu")
-                #     plot_mask2D(
-                #         final[0, 0].to("cpu"), point_coords=(x, y))
+                if self.visualize:
+                    final = F.interpolate(
+                        occupancys.float(), size=(final_H, final_W), 
+                        mode="bilinear", align_corners=True) # here true is correct!
+                    x = coords[0, :, 0].to("cpu")
+                    y = coords[0, :, 1].to("cpu")
+                    plot_mask2D(
+                        final[0, 0].to("cpu"), point_coords=(x, y))
                 
                 coords_accum = coords / stride
                 calculated[coords[0, :, 1], coords[0, :, 0]] = True
