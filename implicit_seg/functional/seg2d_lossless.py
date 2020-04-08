@@ -7,8 +7,6 @@ import os
 from .utils import (
     create_grid2D,
     build_smooth_conv2D,
-    # calculate_uncertainty,
-    # get_uncertain_point_coords_on_grid2D_faster as get_uncertain_point_coords_on_grid2D,
     plot_mask2D,
 )
 
