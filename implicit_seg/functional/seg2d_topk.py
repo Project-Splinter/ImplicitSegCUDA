@@ -108,6 +108,8 @@ class Seg2dTopk(nn.Module):
                 
                 coords = point_coords * stride
                 occupancys_topk = self.batch_eval(coords, **kwargs)
+
+                # point_indices = point_coords[:, :, 1] * W + point_coords[:, :, 0]
                 
                 # put mask point predictions to the right places on the upsampled grid.
                 R, C, H, W = occupancys.shape

@@ -95,6 +95,30 @@ def create_grid2D(min, max, steps, device="cuda:0"):
     coords = coords.view(2, -1).t() # [N, 2]
     return coords
 
+def build_smooth_conv3D(in_channels=1, out_channels=1, kernel_size=3, padding=1):
+    smooth_conv = torch.nn.Conv3d(
+        in_channels=in_channels, out_channels=out_channels, 
+        kernel_size=kernel_size, padding=padding
+    )
+    smooth_conv.weight.data = torch.ones(
+        (in_channels, out_channels, kernel_size, kernel_size, kernel_size), 
+        dtype=torch.float32
+    ) / (kernel_size**3)
+    smooth_conv.bias.data = torch.zeros(out_channels)
+    return smooth_conv
+
+def build_smooth_conv2D(in_channels=1, out_channels=1, kernel_size=3, padding=1):
+    smooth_conv = torch.nn.Conv2d(
+        in_channels=in_channels, out_channels=out_channels, 
+        kernel_size=kernel_size, padding=padding
+    )
+    smooth_conv.weight.data = torch.ones(
+        (in_channels, out_channels, kernel_size, kernel_size), 
+        dtype=torch.float32
+    ) / (kernel_size**2)
+    smooth_conv.bias.data = torch.zeros(out_channels)
+    return smooth_conv
+
 def get_uncertain_point_coords_on_grid3D(uncertainty_map, num_points, **kwargs):
     """
     Find `num_points` most uncertain points from `uncertainty_map` grid.
