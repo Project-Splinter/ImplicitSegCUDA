@@ -52,6 +52,7 @@ class Seg3dTopk(nn.Module):
         coords: in the coordinates of last resolution
         **kwargs: for query_func
         """
+        coords = coords.detach()
         # normalize coords to fit in [b_min, b_max]
         if self.align_corners:
             coords2D = coords.float() / (self.resolutions[-1] - 1)
