@@ -57,22 +57,22 @@ if __name__ == "__main__":
         align_corners = align_corners,
         balance_value = 0.,
         device="cuda:0", 
-        visualize=True
+        visualize=False
     )
     os.makedirs("./data/cache/", exist_ok=True)
 
     with torch.no_grad():
-        for _ in tqdm.tqdm(range(1)):
+        for _ in tqdm.tqdm(range(1000)):
             sdfs = engine.forward(tensor=query_sdfs)
     print (sdfs.shape)
-    cv2.imwrite(
-       "./data/cache/gen_sdf_sumz.png",
-       np.uint8(((sdfs[0, 0]>0).sum(dim=0)>0).float().cpu().numpy() * 255)
-    )
-    cv2.imwrite(
-       "./data/cache/gen_sdf_sumx.png",
-       np.uint8(((sdfs[0, 0]>0).sum(dim=2)>0).float().cpu().numpy().transpose() * 255)
-    )
+    # cv2.imwrite(
+    #    "./data/cache/gen_sdf_sumz.png",
+    #    np.uint8(((sdfs[0, 0]>0).sum(dim=0)>0).float().cpu().numpy() * 255)
+    # )
+    # cv2.imwrite(
+    #    "./data/cache/gen_sdf_sumx.png",
+    #    np.uint8(((sdfs[0, 0]>0).sum(dim=2)>0).float().cpu().numpy().transpose() * 255)
+    # )
 
     # metric
     intersection = (sdfs > 0.) & (gt > 0.)
