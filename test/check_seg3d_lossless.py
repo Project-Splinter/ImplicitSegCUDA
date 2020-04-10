@@ -64,26 +64,13 @@ if __name__ == "__main__":
     os.makedirs("./data/cache/", exist_ok=True)
 
     with torch.no_grad():
-        for _ in tqdm.tqdm(range(1)):
-            sdfs = engine.forward(tensor=query_sdfs)
-    print (sdfs.shape)
+        for _ in tqdm.tqdm(range(100)): # 14.41 fps
+            sdfs = engine(tensor=query_sdfs)
 
-    for _ in tqdm.tqdm(range(1)):
+    for _ in tqdm.tqdm(range(100)): # 12.10 fps
         sdfs = engine(tensor=query_sdfs)
-
         sdfs.sum().backward()
-        print (sdfs[0, 0, 0, 0, 0:10])
-        print (query_sdfs.grad[0, 0, 0, 0, 0:10])
-
-    # cv2.imwrite(
-    #    "./data/cache/gen_sdf_sumz.png",
-    #    np.uint8(((sdfs[0, 0]>0).sum(dim=0)>0).float().cpu().numpy() * 255)
-    # )
-    # cv2.imwrite(
-    #    "./data/cache/gen_sdf_sumx.png",
-    #    np.uint8(((sdfs[0, 0]>0).sum(dim=2)>0).float().cpu().numpy().transpose() * 255)
-    # )
-
+        
     # metric
     intersection = (sdfs > 0.) & (gt > 0.)
     union = (sdfs > 0.) | (gt > 0.)
