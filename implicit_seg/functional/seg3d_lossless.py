@@ -111,40 +111,44 @@ class Seg3dLossless(nn.Module):
                     plot_mask3D(
                         final[0, 0].to("cpu"), point_coords=(x, y, z))
                 
-                coords_accum = coords / stride
-                calculated[coords[0, :, 2], coords[0, :, 1], coords[0, :, 0]] = True
+                with torch.no_grad():
+                    coords_accum = coords / stride
+                    calculated[coords[0, :, 2], coords[0, :, 1], coords[0, :, 0]] = True
 
             else:
-                # here true is correct!
-                valid = F.interpolate(
-                    (occupancys>0.5).float(), 
-                    size=(D, H, W), mode="trilinear", align_corners=True)
+                with torch.no_grad():
+                    # here true is correct!
+                    valid = F.interpolate(
+                        (occupancys>0.5).float(), 
+                        size=(D, H, W), mode="trilinear", align_corners=True)
 
                 # here true is correct!
                 occupancys = F.interpolate(
                     occupancys.float(), 
                     size=(D, H, W), mode="trilinear", align_corners=True)
                 
-                coords_accum *= 2
+                with torch.no_grad():
+                    coords_accum *= 2
 
-                is_boundary = (valid > 0.0) & (valid < 1.0)
-                is_boundary = (self.smooth_conv3x3(is_boundary.float()) > 0)[0, 0]
-                is_boundary[coords_accum[0, :, 2],
-                            coords_accum[0, :, 1], 
-                            coords_accum[0, :, 0]] = False
-                point_coords = is_boundary.permute(2, 1, 0).nonzero().unsqueeze(0)
-                point_indices = (
-                    point_coords[:, :, 2] * H * W + 
-                    point_coords[:, :, 1] * W + 
-                    point_coords[:, :, 0])
+                    is_boundary = (valid > 0.0) & (valid < 1.0)
+                    is_boundary = (self.smooth_conv3x3(is_boundary.float()) > 0)[0, 0]
+                    is_boundary[coords_accum[0, :, 2],
+                                coords_accum[0, :, 1], 
+                                coords_accum[0, :, 0]] = False
+                    point_coords = is_boundary.permute(2, 1, 0).nonzero().unsqueeze(0)
+                    point_indices = (
+                        point_coords[:, :, 2] * H * W + 
+                        point_coords[:, :, 1] * W + 
+                        point_coords[:, :, 0])
 
-                R, C, D, H, W = occupancys.shape
-                # interpolated value
-                occupancys_interp = torch.gather(
-                    occupancys.reshape(R, C, D * H * W), 2, point_indices.unsqueeze(1))
+                    R, C, D, H, W = occupancys.shape
+                    # interpolated value
+                    occupancys_interp = torch.gather(
+                        occupancys.reshape(R, C, D * H * W), 2, point_indices.unsqueeze(1))
 
-                # inferred value
-                coords = point_coords * stride
+                    # inferred value
+                    coords = point_coords * stride
+
                 occupancys_topk = self.batch_eval(coords, **kwargs)
                 
                 # put mask point predictions to the right places on the upsampled grid.
@@ -156,93 +160,97 @@ class Seg3dLossless(nn.Module):
                     .view(R, C, D, H, W)
                 )
 
-                # conflicts
-                conflicts = (
-                    (occupancys_interp - self.balance_value) *
-                    (occupancys_topk - self.balance_value) < 0
-                )[0, 0]
-
-                # if self.visualize:
-                #     final = F.interpolate(
-                #         occupancys.float(), size=(final_D, final_H, final_W), 
-                #         mode="trilinear", align_corners=True) # here true is correct!
-                #     x = coords[0, :, 0].to("cpu")
-                #     y = coords[0, :, 1].to("cpu")
-                #     z = coords[0, :, 2].to("cpu")
-                    
-                #     plot_mask3D(
-                #         final[0, 0].to("cpu"), point_coords=(x, y, z))
-
-                voxels = coords / stride
-                coords_accum = torch.cat([
-                    voxels, 
-                    coords_accum
-                ], dim=1).unique(dim=1)
-                calculated[coords[0, :, 2], coords[0, :, 1], coords[0, :, 0]] = True
-
-                while conflicts.sum() > 0:
-                    conflicts_coords = coords[0, conflicts, :]
-
-                    # if self.visualize:
-                    #     final = F.interpolate(
-                    #         occupancys.float(), size=(final_D, final_H, final_W), 
-                    #         mode="trilinear", align_corners=True) # here true is correct!
-                    #     x = conflicts_coords[:, 0].to("cpu")
-                    #     y = conflicts_coords[:, 1].to("cpu")
-                    #     z = conflicts_coords[:, 2].to("cpu")
-                        
-                    #     plot_mask3D(
-                    #         final[0, 0].to("cpu"), point_coords=(x, y, z), title="conflicts")
-                    
-                    conflicts_boundary = (
-                        conflicts_coords.int() +
-                        self.gird8_offsets.unsqueeze(1) * stride.int()
-                    ).reshape(-1, 3).long().unique(dim=0)
-                    conflicts_boundary[:, 0] = (
-                        conflicts_boundary[:, 0].clamp(0, calculated.size(2) - 1))
-                    conflicts_boundary[:, 1] = (
-                        conflicts_boundary[:, 1].clamp(0, calculated.size(1) - 1))
-                    conflicts_boundary[:, 2] = (
-                        conflicts_boundary[:, 2].clamp(0, calculated.size(0) - 1))
-
-                    coords = conflicts_boundary[
-                        calculated[conflicts_boundary[:, 2], 
-                                   conflicts_boundary[:, 1], 
-                                   conflicts_boundary[:, 0]] == False
-                    ]
-
-                    # if self.visualize:
-                    #     final = F.interpolate(
-                    #         occupancys.float(), size=(final_D, final_H, final_W), 
-                    #         mode="trilinear", align_corners=True) # here true is correct!
-                    #     x = coords[:, 0].to("cpu")
-                    #     y = coords[:, 1].to("cpu")
-                    #     z = coords[:, 2].to("cpu")
-                        
-                    #     plot_mask3D(
-                    #         final[0, 0].to("cpu"), point_coords=(x, y, z), title="coords")
-
-                    coords = coords.unsqueeze(0)
-                    point_coords = coords / stride
-                    point_indices = (
-                        point_coords[:, :, 2] * H * W + 
-                        point_coords[:, :, 1] * W + 
-                        point_coords[:, :, 0])
-                    
-                    R, C, D, H, W = occupancys.shape
-                    # interpolated value
-                    occupancys_interp = torch.gather(
-                        occupancys.reshape(R, C, D * H * W), 2, point_indices.unsqueeze(1))
-
-                    # inferred value
-                    coords = point_coords * stride
-                    occupancys_topk = self.batch_eval(coords, **kwargs)
-                    
+                with torch.no_grad():
                     # conflicts
                     conflicts = (
                         (occupancys_interp - self.balance_value) *
                         (occupancys_topk - self.balance_value) < 0
                     )[0, 0]
+
+                    # if self.visualize:
+                    #     final = F.interpolate(
+                    #         occupancys.float(), size=(final_D, final_H, final_W), 
+                    #         mode="trilinear", align_corners=True) # here true is correct!
+                    #     x = coords[0, :, 0].to("cpu")
+                    #     y = coords[0, :, 1].to("cpu")
+                    #     z = coords[0, :, 2].to("cpu")
+                        
+                    #     plot_mask3D(
+                    #         final[0, 0].to("cpu"), point_coords=(x, y, z))
+
+                    voxels = coords / stride
+                    coords_accum = torch.cat([
+                        voxels, 
+                        coords_accum
+                    ], dim=1).unique(dim=1)
+                    calculated[coords[0, :, 2], coords[0, :, 1], coords[0, :, 0]] = True
+
+                while conflicts.sum() > 0:
+                    with torch.no_grad():
+                        conflicts_coords = coords[0, conflicts, :]
+
+                        # if self.visualize:
+                        #     final = F.interpolate(
+                        #         occupancys.float(), size=(final_D, final_H, final_W), 
+                        #         mode="trilinear", align_corners=True) # here true is correct!
+                        #     x = conflicts_coords[:, 0].to("cpu")
+                        #     y = conflicts_coords[:, 1].to("cpu")
+                        #     z = conflicts_coords[:, 2].to("cpu")
+                            
+                        #     plot_mask3D(
+                        #         final[0, 0].to("cpu"), point_coords=(x, y, z), title="conflicts")
+                        
+                        conflicts_boundary = (
+                            conflicts_coords.int() +
+                            self.gird8_offsets.unsqueeze(1) * stride.int()
+                        ).reshape(-1, 3).long().unique(dim=0)
+                        conflicts_boundary[:, 0] = (
+                            conflicts_boundary[:, 0].clamp(0, calculated.size(2) - 1))
+                        conflicts_boundary[:, 1] = (
+                            conflicts_boundary[:, 1].clamp(0, calculated.size(1) - 1))
+                        conflicts_boundary[:, 2] = (
+                            conflicts_boundary[:, 2].clamp(0, calculated.size(0) - 1))
+
+                        coords = conflicts_boundary[
+                            calculated[conflicts_boundary[:, 2], 
+                                    conflicts_boundary[:, 1], 
+                                    conflicts_boundary[:, 0]] == False
+                        ]
+
+                        # if self.visualize:
+                        #     final = F.interpolate(
+                        #         occupancys.float(), size=(final_D, final_H, final_W), 
+                        #         mode="trilinear", align_corners=True) # here true is correct!
+                        #     x = coords[:, 0].to("cpu")
+                        #     y = coords[:, 1].to("cpu")
+                        #     z = coords[:, 2].to("cpu")
+                            
+                        #     plot_mask3D(
+                        #         final[0, 0].to("cpu"), point_coords=(x, y, z), title="coords")
+
+                        coords = coords.unsqueeze(0)
+                        point_coords = coords / stride
+                        point_indices = (
+                            point_coords[:, :, 2] * H * W + 
+                            point_coords[:, :, 1] * W + 
+                            point_coords[:, :, 0])
+                        
+                        R, C, D, H, W = occupancys.shape
+                        # interpolated value
+                        occupancys_interp = torch.gather(
+                            occupancys.reshape(R, C, D * H * W), 2, point_indices.unsqueeze(1))
+
+                        # inferred value
+                        coords = point_coords * stride
+
+                    occupancys_topk = self.batch_eval(coords, **kwargs)
+                    
+                    with torch.no_grad():
+                        # conflicts
+                        conflicts = (
+                            (occupancys_interp - self.balance_value) *
+                            (occupancys_topk - self.balance_value) < 0
+                        )[0, 0]
                     
                     # put mask point predictions to the right places on the upsampled grid.
                     point_indices = point_indices.unsqueeze(1).expand(-1, C, -1)
@@ -252,11 +260,12 @@ class Seg3dLossless(nn.Module):
                         .view(R, C, D, H, W)
                     )
 
-                    voxels = coords / stride
-                    coords_accum = torch.cat([
-                        voxels, 
-                        coords_accum
-                    ], dim=1).unique(dim=1)
-                    calculated[coords[0, :, 2], coords[0, :, 1], coords[0, :, 0]] = True
+                    with torch.no_grad():
+                        voxels = coords / stride
+                        coords_accum = torch.cat([
+                            voxels, 
+                            coords_accum
+                        ], dim=1).unique(dim=1)
+                        calculated[coords[0, :, 2], coords[0, :, 1], coords[0, :, 0]] = True
 
         return occupancys

@@ -39,6 +39,8 @@ if __name__ == "__main__":
     # gt
     query_sdfs = torch.load(
         "./data/sdf.pth").to("cuda:0").float() # [1, 1, H, W, D]
+    query_sdfs.requires_grad = True
+    print (query_sdfs.shape)
 
     if type(resolutions[-1]) is int:
         final_W, final_H, final_D = resolutions[-1], resolutions[-1], resolutions[-1]
@@ -62,9 +64,17 @@ if __name__ == "__main__":
     os.makedirs("./data/cache/", exist_ok=True)
 
     with torch.no_grad():
-        for _ in tqdm.tqdm(range(1000)):
+        for _ in tqdm.tqdm(range(1)):
             sdfs = engine.forward(tensor=query_sdfs)
     print (sdfs.shape)
+
+    for _ in tqdm.tqdm(range(1)):
+        sdfs = engine(tensor=query_sdfs)
+
+        sdfs.sum().backward()
+        print (sdfs[0, 0, 0, 0, 0:10])
+        print (query_sdfs.grad[0, 0, 0, 0, 0:10])
+
     # cv2.imwrite(
     #    "./data/cache/gen_sdf_sumz.png",
     #    np.uint8(((sdfs[0, 0]>0).sum(dim=0)>0).float().cpu().numpy() * 255)
