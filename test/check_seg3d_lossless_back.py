@@ -1,9 +1,11 @@
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import cv2
 
-from implicit_seg.functional import Seg3dTopk
+from implicit_seg.functional import Seg3dLossless
+from implicit_seg.functional import plot_mask3D
 
 resolutions = [
     (8+1, 20+1, 8+1),
@@ -11,20 +13,6 @@ resolutions = [
     (32+1, 80+1, 32+1),
     (64+1, 160+1, 64+1),
     (128+1, 320+1, 128+1),
-]
-num_points = [
-    None, 
-    8000, 
-    8000, 
-    8000, 
-    8000, 
-]
-clip_mins = [
-    None,
-    -1e9,
-    -1e9,
-    -1e9,
-    -1e9,
 ]
 align_corners = False
 
@@ -46,13 +34,18 @@ def query_func(tensor, points):
         )[0, 0, 0, 0].unsqueeze(0) for i in range(bz)
     ]
     return occupancys
-
-if __name__ == "__main__":  
+if __name__ == "__main__":
     import tqdm 
     import os 
+    
+    lr = 1e-1
+    niter = 100000
+    MSE = nn.MSELoss()
+
     # gt
     query_sdfs = torch.load(
         "./data/sdf.pth").to("cuda:0").float() # [1, 1, H, W, D]
+    print ("data:", query_sdfs.shape)
 
     if type(resolutions[-1]) is int:
         final_W, final_H, final_D = resolutions[-1], resolutions[-1], resolutions[-1]
@@ -60,39 +53,43 @@ if __name__ == "__main__":
         final_W, final_H, final_D = resolutions[-1]
     gt = F.interpolate(
         query_sdfs, (final_D, final_H, final_W), mode="trilinear", align_corners=align_corners)
+    # gt = (gt > 0.0).float()
     print ("gt:", gt.shape)
 
+    # input
+    input = torch.rand_like(gt)
+    input.requires_grad = True
+    print("input:", input.shape)
+
     # infer
-    engine = Seg3dTopk(
+    engine = Seg3dLossless(
         query_func = query_func, 
         b_min = [[-1.0, -1.0, -1.0]],
         b_max = [[1.0, 1.0, 1.0]],
         resolutions = resolutions,
-        num_points = num_points,
-        clip_mins = clip_mins,
         align_corners = align_corners,
         balance_value = 0.,
         device="cuda:0", 
-        visualize=True
-    )
-    os.makedirs("./data/cache/", exist_ok=True)
-
-    with torch.no_grad():
-        for _ in tqdm.tqdm(range(1)):
-            sdfs = engine.forward(tensor=query_sdfs)
-    print (sdfs.shape)
-    cv2.imwrite(
-       "./data/cache/gen_sdf_sumz.png",
-       np.uint8(((sdfs[0, 0]>0).sum(dim=0)>0).float().cpu().numpy() * 255)
-    )
-    cv2.imwrite(
-       "./data/cache/gen_sdf_sumx.png",
-       np.uint8(((sdfs[0, 0]>0).sum(dim=2)>0).float().cpu().numpy().transpose() * 255)
+        visualize=False
     )
 
-    # metric
-    intersection = (sdfs > 0.) & (gt > 0.)
-    union = (sdfs > 0.) | (gt > 0.)
-    iou = intersection.sum().float() / union.sum().float()
-    print (f"iou is {iou}")
-    
+    # training
+    solver = torch.optim.Adam([input], lr = lr)
+    pbar = tqdm.tqdm(range(niter))
+
+    for i in pbar:
+        occupancys = engine(tensor=input)
+
+        solver.zero_grad()
+        loss = MSE(occupancys, gt)
+        loss.backward()
+        solver.step()
+
+        if input.grad is not None:
+            input.grad.data.zero_()
+
+        state_msg = (f'loss: {loss.item(): .6f}')
+        pbar.set_description(state_msg)
+
+        if i >20 and i % 10 == 0:
+            plot_mask3D(occupancys.detach()[0, 0].to("cpu"))

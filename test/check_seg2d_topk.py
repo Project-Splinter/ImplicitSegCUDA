@@ -30,7 +30,7 @@ def query_func(tensor, points):
             mode="bilinear",
             align_corners=align_corners,
             padding_mode="border", # to align with F.interpolate
-        ).squeeze().unsqueeze(0) for i in range(bz)
+        )[0, 0, 0].unsqueeze(0) for i in range(bz)
     ]
     return occupancys
 

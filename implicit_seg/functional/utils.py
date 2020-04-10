@@ -24,7 +24,7 @@ def plot_mask2D(
     plt.xlabel(W, fontsize=30)
     plt.xticks([], [])
     plt.yticks([], [])
-    plt.imshow(mask, interpolation="nearest", cmap=plt.get_cmap('gray'))
+    plt.imshow(mask.detach(), interpolation="nearest", cmap=plt.get_cmap('gray'))
     if point_coords is not None:
         plt.scatter(
             x=point_coords[0], y=point_coords[1], 
@@ -50,10 +50,9 @@ def plot_mask3D(
     import vtkplotter
     from skimage import measure
 
-    mask = mask.to("cpu").numpy()
+    mask = mask.detach().to("cpu").numpy()
     mask = mask.transpose(2, 1, 0)
-    point_coords = torch.stack(point_coords, 1).to("cpu").numpy()
-
+    
     # marching cube to find surface
     verts, faces, normals, values = measure.marching_cubes_lewiner(
         mask, 0.5, gradient_direction='ascent')
@@ -62,9 +61,13 @@ def plot_mask3D(
     mesh = trimesh.Trimesh(verts, faces)
     mesh.visual.face_colors = [200, 200, 250, 100]
     vp = vtkplotter.Plotter(title=title, size=(figsize, figsize))
-    pc = vtkplotter.Points(point_coords, r=point_marker_size, c='red')
-    vp.show(mesh, pc, bg="white", axes=1)
-
+    
+    if point_coords:
+        point_coords = torch.stack(point_coords, 1).to("cpu").numpy()
+        pc = vtkplotter.Points(point_coords, r=point_marker_size, c='red')
+        vp.show(mesh, pc, bg="white", axes=1)
+    else:
+        vp.show(mesh, bg="white", axes=1)
 
 def create_grid3D(min, max, steps, device="cuda:0"):
     if type(min) is int:
