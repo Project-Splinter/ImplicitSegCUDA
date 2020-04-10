@@ -77,10 +77,55 @@ __global__ void interp2x_boundary2d_cuda_forward_kernel(
     }
 }
 
+
+template <typename scalar_t>
+__global__ void interp2x_boundary2d_cuda_backward_kernel(
+    const torch::PackedTensorAccessor32<scalar_t,4> grad_output,
+    torch::PackedTensorAccessor32<scalar_t,4> grad_input) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    const int bn = grad_input.size(0);
+    const int c = grad_input.size(1);
+    const int h = grad_input.size(2);
+    const int w = grad_input.size(3);
+
+    if (i >= bn * c * h * w) {
+        return;
+    }
+    
+    const int x = i % w;
+    const int y = (i / w) % h;
+    const int ci = (i / (h * w)) % c;
+    const int bi = i / (c * h * w);
+
+    auto grad = grad_output[bi][ci][y*2][x*2];
+
+    if (x > 0){
+        grad += grad_output[bi][ci][y*2][x*2 - 1] / 2.0;}
+    if (x < w - 1){
+        grad += grad_output[bi][ci][y*2][x*2 + 1] / 2.0;}
+    if (y > 0){
+        grad += grad_output[bi][ci][y*2 - 1][x*2] / 2.0;}
+    if (y < h - 1){
+        grad += grad_output[bi][ci][y*2 + 1][x*2] / 2.0;}
+    
+    if (x > 0 && y > 0){
+        grad += grad_output[bi][ci][y*2 - 1][x*2 - 1] / 4.0;}
+    if (x < w - 1 && y > 0){
+        grad += grad_output[bi][ci][y*2 - 1][x*2 + 1] / 4.0;}
+    if (x > 0 && y < h - 1){
+        grad += grad_output[bi][ci][y*2 + 1][x*2 - 1] / 4.0;}
+    if (x < w - 1 && y < h - 1){
+        grad += grad_output[bi][ci][y*2 + 1][x*2 + 1] / 4.0;}
+    
+    grad_input[bi][ci][y][x] = grad;
+    }
 } // namespace
 
+
 std::vector<torch::Tensor> interp2x_boundary2d_cuda_forward(
-    const torch::Tensor& input, const float balance_value) {
+    const torch::Tensor& input, 
+    const float balance_value) {
     
     torch::Device device = input.device();
     int bn = input.size(0);
@@ -107,4 +152,30 @@ std::vector<torch::Tensor> interp2x_boundary2d_cuda_forward(
     }));
 
     return {output, is_boundary};
+}
+
+
+torch::Tensor interp2x_boundary2d_cuda_backward(
+    const torch::Tensor& grad_output) {
+    
+    int bn = grad_output.size(0);
+    int c = grad_output.size(1);
+    int h = (grad_output.size(2) + 1) / 2;
+    int w = (grad_output.size(3) + 1) / 2;
+
+    auto grad_input = torch::empty({bn, c, h, w}, grad_output.type());
+    
+    const int num_kernels = bn * c * h * w;
+    const int num_threads = 1024;
+    const dim3 blocks((num_kernels + num_threads - 1) / num_threads);
+
+    AT_DISPATCH_FLOATING_TYPES(
+        grad_output.scalar_type(), "interp2x_boundary2d_cuda_backward", ([&] {
+            interp2x_boundary2d_cuda_backward_kernel<scalar_t>
+                <<<blocks, num_threads>>>(
+                    grad_output.packed_accessor32<scalar_t, 4>(), 
+                    grad_input.packed_accessor32<scalar_t, 4>());
+    }));
+
+    return grad_input;
 }
