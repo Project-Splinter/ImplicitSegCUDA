@@ -59,12 +59,22 @@ if __name__ == "__main__":
         balance_value = 0.5,
         device="cuda:0", 
         visualize=False,
-        # use_cuda_impl=False, # 70.92it/s v.s. 74.88it/s
+        # use_cuda_impl=False, 
     )
 
+    query_mask.requires_grad = True
+
+    print ("forward")
+    # 69.15it/s v.s. 75.45it/s (use_cuda_impl=True)
     with torch.no_grad():
-        for _ in tqdm.tqdm(range(1000)): # 74.88 fps
+        for _ in tqdm.tqdm(range(1000)):
             occupancys = engine(tensor=query_mask)
+
+    print ("backward")
+    # 50.35it/s v.s. 44.80it/s (use_cuda_impl=True)
+    for _ in tqdm.tqdm(range(1000)):
+        occupancys = engine(tensor=query_mask)
+        occupancys.sum().backward()
 
     # metric
     intersection = (occupancys > 0.5) & (gt > 0.5)
