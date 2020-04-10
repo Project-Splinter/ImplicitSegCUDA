@@ -34,7 +34,9 @@ def query_func(tensor, points):
     ]
     return occupancys
 
-if __name__ == "__main__":    
+if __name__ == "__main__":   
+    import tqdm
+
     # gt
     query_mask = torch.from_numpy(
         cv2.blur(cv2.imread("./data/image.png", cv2.IMREAD_UNCHANGED), (20, 20))[:, :, 3]
@@ -56,13 +58,13 @@ if __name__ == "__main__":
         align_corners = align_corners,
         balance_value = 0.5,
         device="cuda:0", 
-        visualize=True
+        visualize=False,
+        # use_cuda_impl=False, # 70.92it/s v.s. 74.88it/s
     )
-    occupancys = engine.forward(tensor=query_mask)
-    # cv2.imwrite(
-    #    "../data/test2D.png",
-    #    np.uint8(occupancys[0, 0].cpu().numpy() * 255)
-    # )
+
+    with torch.no_grad():
+        for _ in tqdm.tqdm(range(1000)): # 74.88 fps
+            occupancys = engine(tensor=query_mask)
 
     # metric
     intersection = (occupancys > 0.5) & (gt > 0.5)

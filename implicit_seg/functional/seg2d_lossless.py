@@ -14,7 +14,7 @@ class Seg2dLossless(nn.Module):
     def __init__(self, 
                  query_func, b_min, b_max, resolutions,
                  channels=1, balance_value=0.5, device="cuda:0", align_corners=False, 
-                 visualize=False):
+                 visualize=False, use_cuda_impl=True):
         """
         align_corners: same with how you process gt. (grid_sample / interpolate) 
         """
@@ -33,6 +33,7 @@ class Seg2dLossless(nn.Module):
         self.channels = channels; assert self.channels == 1
         self.align_corners = align_corners
         self.visualize = visualize
+        self.use_cuda_impl = use_cuda_impl
 
         for resolution in resolutions:
             assert resolution[0] % 2 == 1 and resolution[1] % 2 == 1, \
@@ -55,6 +56,11 @@ class Seg2dLossless(nn.Module):
 
         self.smooth_conv3x3 = build_smooth_conv2D(
             in_channels=1, out_channels=1, kernel_size=3, padding=1).to(self.device)
+
+        # cuda impl
+        if self.use_cuda_impl:
+            from .interp2x_boundary2d import Interp2xBoundary2d
+            self.upsampler = Interp2xBoundary2d()
 
     def batch_eval(self, coords, **kwargs):
         """
@@ -112,22 +118,28 @@ class Seg2dLossless(nn.Module):
                 calculated[coords[0, :, 1], coords[0, :, 0]] = True
 
             else:
-                # here true is correct!
-                valid = F.interpolate(
-                    (occupancys>0.5).float(), 
-                    size=(H, W), mode="bilinear", align_corners=True)
-
-                # here true is correct!
-                occupancys = F.interpolate(
-                    occupancys.float(), 
-                    size=(H, W), mode="bilinear", align_corners=True)
-
                 coords_accum *= 2
 
-                is_boundary = (valid > 0.0) & (valid < 1.0)
+                if self.use_cuda_impl:
+                    occupancys, is_boundary = self.upsampler(occupancys)
+                    # is_boundary = is_boundary[0, 0]
+                else:
+                    # here true is correct!
+                    valid = F.interpolate(
+                        (occupancys>0.5).float(), 
+                        size=(H, W), mode="bilinear", align_corners=True)
+
+                    # here true is correct!
+                    occupancys = F.interpolate(
+                        occupancys.float(), 
+                        size=(H, W), mode="bilinear", align_corners=True)
+
+                    is_boundary = (valid > 0.0) & (valid < 1.0)
+
                 is_boundary = (self.smooth_conv3x3(is_boundary.float()) > 0)[0, 0]
                 is_boundary[coords_accum[0, :, 1], 
                             coords_accum[0, :, 0]] = False
+                
                 point_coords = is_boundary.permute(1, 0).nonzero().unsqueeze(0)
                 point_indices = point_coords[:, :, 1] * W + point_coords[:, :, 0]
 

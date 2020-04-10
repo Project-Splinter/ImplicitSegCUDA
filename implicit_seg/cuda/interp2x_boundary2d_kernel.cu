@@ -8,7 +8,7 @@
 namespace {
 
 template <typename scalar_t>
-__global__ void upsample2x_bilinear2d_cuda_forward_kernel(
+__global__ void interp2x_boundary2d_cuda_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,4> input,
     torch::PackedTensorAccessor32<scalar_t,4> output,
     torch::PackedTensorAccessor32<bool,4> is_boundary,
@@ -79,7 +79,7 @@ __global__ void upsample2x_bilinear2d_cuda_forward_kernel(
 
 } // namespace
 
-std::vector<torch::Tensor> upsample2x_bilinear2d_cuda_forward(
+std::vector<torch::Tensor> interp2x_boundary2d_cuda_forward(
     const torch::Tensor& input, const float balance_value) {
     
     torch::Device device = input.device();
@@ -97,8 +97,8 @@ std::vector<torch::Tensor> upsample2x_bilinear2d_cuda_forward(
     const dim3 blocks((num_kernels + num_threads - 1) / num_threads);
 
     AT_DISPATCH_FLOATING_TYPES(
-        output.scalar_type(), "upsample2x_bilinear2d_cuda_forward", ([&] {
-            upsample2x_bilinear2d_cuda_forward_kernel<scalar_t>
+        output.scalar_type(), "interp2x_boundary2d_cuda_forward", ([&] {
+            interp2x_boundary2d_cuda_forward_kernel<scalar_t>
                 <<<blocks, num_threads>>>(
                     input.packed_accessor32<scalar_t, 4>(), 
                     output.packed_accessor32<scalar_t, 4>(),
