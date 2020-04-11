@@ -149,6 +149,8 @@ class Seg3dLossless(nn.Module):
                     # inferred value
                     coords = point_coords * stride
 
+                if coords.size(1) == 0:
+                    continue
                 occupancys_topk = self.batch_eval(coords, **kwargs)
                 
                 # put mask point predictions to the right places on the upsampled grid.
