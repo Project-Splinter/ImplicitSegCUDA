@@ -56,7 +56,7 @@ class Seg2dLossless(nn.Module):
 
         self.smooth_conv3x3 = build_smooth_conv2D(
             in_channels=1, out_channels=1, kernel_size=3, padding=1).to(self.device)
-
+    
         # cuda impl
         if self.use_cuda_impl:
             from .interp2x_boundary2d import Interp2xBoundary2d
