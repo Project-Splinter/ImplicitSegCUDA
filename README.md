@@ -13,6 +13,8 @@ First `mkdir ./data`, then download `image.png`([here](https://drive.google.com/
 
 ## Usage
 
+**Note**: To use `--vis` option, you need to install additional dependence: `vtkplotter` and `trimesh` and `skimage`.
+
 ```
 # 2d
 python test/check_seg2d.py --mask ./data/image.png --mode lossless --use_cuda_impl --vis
@@ -139,3 +141,5 @@ iou = intersection.sum().float() / union.sum().float()
 print (f"iou is {iou}")
 
 ```
+
+**Note**: `Seg3dTopk` and `Seg3dLossless` are both instances of `nn.Module`, so you need to be carefull when you want to integrate this to other trainable model.
