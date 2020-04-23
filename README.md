@@ -18,8 +18,10 @@ First `mkdir ./data`, then download `image.png`([here](https://drive.google.com/
 ```
 # 2d
 python test/check_seg2d.py --mask ./data/image.png --mode lossless --use_cuda_impl --vis
+python test/check_seg2d.py --mask ./data/image.png --mode topk --use_cuda_impl --vis
 # 3d
 python test/check_seg3d.py --voxel ./data/sdf.pth --mode lossless --use_cuda_impl --vis
+python test/check_seg3d.py --voxel ./data/sdf.pth --mode topk --use_cuda_impl --vis
 ```
 
 see also in `test/check_seg3d.py`
