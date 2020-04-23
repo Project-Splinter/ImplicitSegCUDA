@@ -7,3 +7,4 @@ from .utils import plot_mask2D
 from .utils import plot_mask3D
 
 from .interp2x_boundary2d import Interp2xBoundary2d
+from .interp2x_boundary3d import Interp2xBoundary3d

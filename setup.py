@@ -8,6 +8,11 @@ ext_modules=[
         'implicit_seg/cuda/interp2x_boundary2d.cpp',
         'implicit_seg/cuda/interp2x_boundary2d_kernel.cu',
     ]),
+
+    CUDAExtension('implicit_seg.cuda.interp2x_boundary3d', [
+        'implicit_seg/cuda/interp2x_boundary3d.cpp',
+        'implicit_seg/cuda/interp2x_boundary3d_kernel.cu',
+    ]),
 ]
 
 setup(

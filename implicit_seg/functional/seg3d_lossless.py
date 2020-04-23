@@ -59,6 +59,10 @@ class Seg3dLossless(nn.Module):
         self.smooth_conv3x3 = build_smooth_conv3D(
             in_channels=1, out_channels=1, kernel_size=3, padding=1).to(self.device)
 
+        # cuda impl
+        if self.use_cuda_impl:
+            from .interp2x_boundary3d import Interp2xBoundary3d
+            self.upsampler = Interp2xBoundary3d()
 
     def batch_eval(self, coords, **kwargs):
         """
@@ -111,21 +115,26 @@ class Seg3dLossless(nn.Module):
 
             # next steps
             else:
-                with torch.no_grad():
+                coords_accum *= 2
+
+                if self.use_cuda_impl:
+                    occupancys, is_boundary = self.upsampler(occupancys)
+
+                else:
+                    with torch.no_grad():
+                        # here true is correct!
+                        valid = F.interpolate(
+                            (occupancys>0.5).float(), 
+                            size=(D, H, W), mode="trilinear", align_corners=True)
+
                     # here true is correct!
-                    valid = F.interpolate(
-                        (occupancys>0.5).float(), 
+                    occupancys = F.interpolate(
+                        occupancys.float(), 
                         size=(D, H, W), mode="trilinear", align_corners=True)
 
-                # here true is correct!
-                occupancys = F.interpolate(
-                    occupancys.float(), 
-                    size=(D, H, W), mode="trilinear", align_corners=True)
+                    is_boundary = (valid > 0.0) & (valid < 1.0)
                 
                 with torch.no_grad():
-                    coords_accum *= 2
-
-                    is_boundary = (valid > 0.0) & (valid < 1.0)
                     is_boundary = (self.smooth_conv3x3(is_boundary.float()) > 0)[0, 0]
                     is_boundary[coords_accum[0, :, 2],
                                 coords_accum[0, :, 1], 
