@@ -15,7 +15,7 @@ class Seg2dTopk(nn.Module):
     def __init__(self, 
                  query_func, b_min, b_max, resolutions, num_points, clip_mins,
                  channels=1, balance_value=0.5, device="cuda:0", align_corners=False, 
-                 visualize=False):
+                 visualize=False, **kwargs):
         """
         align_corners: same with how you process gt. (grid_sample / interpolate) 
         """
@@ -87,14 +87,9 @@ class Seg2dTopk(nn.Module):
                 occupancys = occupancys.view(self.batchsize, self.channels, H, W)
 
                 if self.visualize:
-                    final = F.interpolate(
-                        occupancys.float(), size=(final_H, final_W), 
-                        mode="bilinear", align_corners=True) # here true is correct!
-                    x = coords[0, :, 0].to("cpu")
-                    y = coords[0, :, 1].to("cpu")
-                    plot_mask2D(
-                        final[0, 0].to("cpu"), point_coords=(x, y))
+                    self.plot(occupancys, coords, final_H, final_W)
 
+            # next steps
             else:
                 # here true is correct!
                 occupancys = F.interpolate(
@@ -122,12 +117,15 @@ class Seg2dTopk(nn.Module):
                 )
 
                 if self.visualize:
-                    final = F.interpolate(
-                        occupancys.float(), size=(final_H, final_W), 
-                        mode="bilinear", align_corners=True) # here true is correct!
-                    x = coords[0, :, 0].to("cpu")
-                    y = coords[0, :, 1].to("cpu")
-                    plot_mask2D(
-                        final[0, 0].to("cpu"), point_coords=(x, y))
+                    self.plot(occupancys, coords, final_H, final_W)
 
         return occupancys
+
+    def plot(self, occupancys, coords, final_H, final_W):
+        final = F.interpolate(
+            occupancys.float(), size=(final_H, final_W), 
+            mode="bilinear", align_corners=True) # here true is correct!
+        x = coords[0, :, 0].to("cpu")
+        y = coords[0, :, 1].to("cpu")
+        plot_mask2D(
+            final[0, 0].to("cpu"), point_coords=(x, y))

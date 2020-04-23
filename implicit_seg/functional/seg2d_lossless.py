@@ -14,7 +14,7 @@ class Seg2dLossless(nn.Module):
     def __init__(self, 
                  query_func, b_min, b_max, resolutions,
                  channels=1, balance_value=0.5, device="cuda:0", align_corners=False, 
-                 visualize=False, use_cuda_impl=True):
+                 visualize=False, debug=False, use_cuda_impl=True, **kwargs):
         """
         align_corners: same with how you process gt. (grid_sample / interpolate) 
         """
@@ -33,6 +33,7 @@ class Seg2dLossless(nn.Module):
         self.channels = channels; assert self.channels == 1
         self.align_corners = align_corners
         self.visualize = visualize
+        self.debug = debug
         self.use_cuda_impl = use_cuda_impl
 
         for resolution in resolutions:
@@ -106,13 +107,7 @@ class Seg2dLossless(nn.Module):
                 occupancys = occupancys.view(self.batchsize, self.channels, H, W)
 
                 if self.visualize:
-                    final = F.interpolate(
-                        occupancys.float(), size=(final_H, final_W), 
-                        mode="bilinear", align_corners=True) # here true is correct!
-                    x = coords[0, :, 0].to("cpu")
-                    y = coords[0, :, 1].to("cpu")
-                    plot_mask2D(
-                        final[0, 0].to("cpu"), point_coords=(x, y))
+                    self.plot(occupancys, coords, final_H, final_W)
                 
                 coords_accum = coords / stride
                 calculated[coords[0, :, 1], coords[0, :, 0]] = True
@@ -122,7 +117,7 @@ class Seg2dLossless(nn.Module):
 
                 if self.use_cuda_impl:
                     occupancys, is_boundary = self.upsampler(occupancys)
-                    # is_boundary = is_boundary[0, 0]
+
                 else:
                     # here true is correct!
                     valid = F.interpolate(
@@ -167,15 +162,8 @@ class Seg2dLossless(nn.Module):
                     (occupancys_interp - self.balance_value) *
                     (occupancys_topk - self.balance_value) < 0
                 )[0, 0]
-
                 if self.visualize:
-                    final = F.interpolate(
-                        occupancys.float(), size=(final_H, final_W), 
-                        mode="bilinear", align_corners=True) # here true is correct!
-                    x = coords[0, :, 0].to("cpu")
-                    y = coords[0, :, 1].to("cpu")
-                    plot_mask2D(
-                        final[0, 0].to("cpu"), point_coords=(x, y))
+                    self.plot(occupancys, coords, final_H, final_W)
 
                 voxels = coords / stride
                 coords_accum = torch.cat([
@@ -186,14 +174,10 @@ class Seg2dLossless(nn.Module):
 
                 while conflicts.sum() > 0:
                     conflicts_coords = coords[0, conflicts, :]
-                    # if self.visualize:
-                    #     final = F.interpolate(
-                    #         occupancys.float(), size=(final_H, final_W), 
-                    #         mode="bilinear", align_corners=True) # here true is correct!
-                    #     x = conflicts_coords[:, 0].to("cpu")
-                    #     y = conflicts_coords[:, 1].to("cpu")
-                    #     plot_mask2D(
-                    #         final[0, 0].to("cpu"), point_coords=(x, y), title="conflicts")
+                    if self.debug:
+                        self.plot(
+                            occupancys, conflicts_coords.unsqueeze(0), 
+                            final_H, final_W, title="conflicts")
 
                     conflicts_boundary = (
                         conflicts_coords.int() +
@@ -207,14 +191,10 @@ class Seg2dLossless(nn.Module):
                     coords = conflicts_boundary[
                         calculated[conflicts_boundary[:, 1], conflicts_boundary[:, 0]] == False
                     ]
-                    # if self.visualize:
-                    #     final = F.interpolate(
-                    #         occupancys.float(), size=(final_H, final_W), 
-                    #         mode="bilinear", align_corners=True) # here true is correct!
-                    #     x = coords[:, 0].to("cpu")
-                    #     y = coords[:, 1].to("cpu")
-                    #     plot_mask2D(
-                    #         final[0, 0].to("cpu"), point_coords=(x, y), title="coords")
+                    if self.debug:
+                        self.plot(
+                            occupancys, coords.unsqueeze(0), 
+                            final_H, final_W, title="coords")
 
                     coords = coords.unsqueeze(0)
                     point_coords = coords / stride
@@ -251,3 +231,12 @@ class Seg2dLossless(nn.Module):
                     calculated[coords[0, :, 1], coords[0, :, 0]] = True
 
         return occupancys
+
+    def plot(self, occupancys, coords, final_H, final_W, title='', **kwargs):
+        final = F.interpolate(
+            occupancys.float(), size=(final_H, final_W), 
+            mode="bilinear", align_corners=True) # here true is correct!
+        x = coords[0, :, 0].to("cpu")
+        y = coords[0, :, 1].to("cpu")
+        plot_mask2D(
+            final[0, 0].to("cpu"), title, (x, y), **kwargs)
