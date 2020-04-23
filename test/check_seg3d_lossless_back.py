@@ -91,5 +91,5 @@ if __name__ == "__main__":
         state_msg = (f'loss: {loss.item(): .6f}')
         pbar.set_description(state_msg)
 
-        if i >20 and i % 10 == 0:
-            plot_mask3D(occupancys.detach()[0, 0].to("cpu"))
+        if i> 0 and i % 5 == 0:
+            plot_mask3D(occupancys.detach()[0, 0].to("cpu"), interactive=False)

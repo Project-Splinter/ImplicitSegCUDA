@@ -14,7 +14,7 @@ class Seg3dLossless(nn.Module):
     def __init__(self, 
                  query_func, b_min, b_max, resolutions,
                  channels=1, balance_value=0.5, device="cuda:0", align_corners=False, 
-                 visualize=False):
+                 visualize=False, debug=False, use_cuda_impl=False, **kwargs):
         """
         align_corners: same with how you process gt. (grid_sample / interpolate) 
         """
@@ -33,6 +33,8 @@ class Seg3dLossless(nn.Module):
         self.channels = channels; assert self.channels == 1
         self.align_corners = align_corners
         self.visualize = visualize
+        self.debug = debug
+        self.use_cuda_impl = use_cuda_impl
 
         for resolution in resolutions:
             assert resolution[0] % 2 == 1 and resolution[1] % 2 == 1, \
@@ -101,20 +103,13 @@ class Seg3dLossless(nn.Module):
                 occupancys = occupancys.view(self.batchsize, self.channels, D, H, W)
 
                 if self.visualize:
-                    final = F.interpolate(
-                        occupancys.float(), size=(final_D, final_H, final_W), 
-                        mode="trilinear", align_corners=True) # here true is correct!
-                    x = coords[0, :, 0].to("cpu")
-                    y = coords[0, :, 1].to("cpu")
-                    z = coords[0, :, 2].to("cpu")
-                    
-                    plot_mask3D(
-                        final[0, 0].to("cpu"), point_coords=(x, y, z))
+                    self.plot(occupancys, coords, final_D, final_H, final_W)
                 
                 with torch.no_grad():
                     coords_accum = coords / stride
                     calculated[coords[0, :, 2], coords[0, :, 1], coords[0, :, 0]] = True
 
+            # next steps
             else:
                 with torch.no_grad():
                     # here true is correct!
@@ -168,18 +163,10 @@ class Seg3dLossless(nn.Module):
                         (occupancys_interp - self.balance_value) *
                         (occupancys_topk - self.balance_value) < 0
                     )[0, 0]
-
-                    # if self.visualize:
-                    #     final = F.interpolate(
-                    #         occupancys.float(), size=(final_D, final_H, final_W), 
-                    #         mode="trilinear", align_corners=True) # here true is correct!
-                    #     x = coords[0, :, 0].to("cpu")
-                    #     y = coords[0, :, 1].to("cpu")
-                    #     z = coords[0, :, 2].to("cpu")
-                        
-                    #     plot_mask3D(
-                    #         final[0, 0].to("cpu"), point_coords=(x, y, z))
-
+                    
+                    if self.visualize:
+                        self.plot(occupancys, coords, final_D, final_H, final_W)
+                    
                     voxels = coords / stride
                     coords_accum = torch.cat([
                         voxels, 
@@ -191,17 +178,10 @@ class Seg3dLossless(nn.Module):
                     with torch.no_grad():
                         conflicts_coords = coords[0, conflicts, :]
 
-                        # if self.visualize:
-                        #     final = F.interpolate(
-                        #         occupancys.float(), size=(final_D, final_H, final_W), 
-                        #         mode="trilinear", align_corners=True) # here true is correct!
-                        #     x = conflicts_coords[:, 0].to("cpu")
-                        #     y = conflicts_coords[:, 1].to("cpu")
-                        #     z = conflicts_coords[:, 2].to("cpu")
-                            
-                        #     plot_mask3D(
-                        #         final[0, 0].to("cpu"), point_coords=(x, y, z), title="conflicts")
-                        
+                        if self.debug:
+                            self.plot(occupancys, conflicts_coords.unsqueeze(0), 
+                                      final_D, final_H, final_W, title='conflicts')
+                          
                         conflicts_boundary = (
                             conflicts_coords.int() +
                             self.gird8_offsets.unsqueeze(1) * stride.int()
@@ -219,17 +199,10 @@ class Seg3dLossless(nn.Module):
                                     conflicts_boundary[:, 0]] == False
                         ]
 
-                        # if self.visualize:
-                        #     final = F.interpolate(
-                        #         occupancys.float(), size=(final_D, final_H, final_W), 
-                        #         mode="trilinear", align_corners=True) # here true is correct!
-                        #     x = coords[:, 0].to("cpu")
-                        #     y = coords[:, 1].to("cpu")
-                        #     z = coords[:, 2].to("cpu")
+                        if self.debug:
+                            self.plot(occupancys, coords.unsqueeze(0), 
+                                      final_D, final_H, final_W, title='coords')
                             
-                        #     plot_mask3D(
-                        #         final[0, 0].to("cpu"), point_coords=(x, y, z), title="coords")
-
                         coords = coords.unsqueeze(0)
                         point_coords = coords / stride
                         point_indices = (
@@ -273,3 +246,14 @@ class Seg3dLossless(nn.Module):
                         calculated[coords[0, :, 2], coords[0, :, 1], coords[0, :, 0]] = True
 
         return occupancys
+
+    def plot(self, occupancys, coords, final_D, final_H, final_W, title='', **kwargs):
+        final = F.interpolate(
+            occupancys.float(), size=(final_D, final_H, final_W), 
+            mode="trilinear", align_corners=True) # here true is correct!
+        x = coords[0, :, 0].to("cpu")
+        y = coords[0, :, 1].to("cpu")
+        z = coords[0, :, 2].to("cpu")
+        
+        plot_mask3D(
+            final[0, 0].to("cpu"), title, (x, y, z), **kwargs)
