@@ -219,21 +219,21 @@ __global__ void interp2x_boundary3d_cuda_backward_kernel(
 
     // 8 corners
     if (x > 0 && y > 0 && z > 0){
-        grad += grad_output[bi][ci][z*2 - 1][y*2 - 1][x*2 - 1] / 4.0;}
+        grad += grad_output[bi][ci][z*2 - 1][y*2 - 1][x*2 - 1] / 8.0;}
     if (x < w - 1 && y > 0 && z > 0){
-        grad += grad_output[bi][ci][z*2 - 1][y*2 - 1][x*2 + 1] / 4.0;}
+        grad += grad_output[bi][ci][z*2 - 1][y*2 - 1][x*2 + 1] / 8.0;}
     if (x > 0 && y < h - 1 && z > 0){
-        grad += grad_output[bi][ci][z*2 - 1][y*2 + 1][x*2 - 1] / 4.0;}
+        grad += grad_output[bi][ci][z*2 - 1][y*2 + 1][x*2 - 1] / 8.0;}
     if (x < w - 1 && y < h - 1 && z > 0){
-        grad += grad_output[bi][ci][z*2 - 1][y*2 + 1][x*2 + 1] / 4.0;}
+        grad += grad_output[bi][ci][z*2 - 1][y*2 + 1][x*2 + 1] / 8.0;}
     if (x > 0 && y > 0 && z < d - 1){
-        grad += grad_output[bi][ci][z*2 + 1][y*2 - 1][x*2 - 1] / 4.0;}
+        grad += grad_output[bi][ci][z*2 + 1][y*2 - 1][x*2 - 1] / 8.0;}
     if (x < w - 1 && y > 0 && z < d - 1){
-        grad += grad_output[bi][ci][z*2 + 1][y*2 - 1][x*2 + 1] / 4.0;}
+        grad += grad_output[bi][ci][z*2 + 1][y*2 - 1][x*2 + 1] / 8.0;}
     if (x > 0 && y < h - 1 && z < d - 1){
-        grad += grad_output[bi][ci][z*2 + 1][y*2 + 1][x*2 - 1] / 4.0;}
+        grad += grad_output[bi][ci][z*2 + 1][y*2 + 1][x*2 - 1] / 8.0;}
     if (x < w - 1 && y < h - 1 && z < d - 1){
-        grad += grad_output[bi][ci][z*2 + 1][y*2 + 1][x*2 + 1] / 4.0;}
+        grad += grad_output[bi][ci][z*2 + 1][y*2 + 1][x*2 + 1] / 8.0;}
     
     grad_input[bi][ci][z][y][x] = grad;
     }
