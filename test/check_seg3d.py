@@ -31,7 +31,7 @@ resolutions = [
     (128+1, 320+1, 128+1),
 ]
 align_corners = False
-device = "cuda:0"
+device = "cuda:1"
 
 def query_func(tensor, points):
     """

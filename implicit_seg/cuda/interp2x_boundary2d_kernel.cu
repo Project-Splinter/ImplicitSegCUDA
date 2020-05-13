@@ -133,9 +133,11 @@ std::vector<torch::Tensor> interp2x_boundary2d_cuda_forward(
     int h = input.size(2) * 2 - 1;
     int w = input.size(3) * 2 - 1;
 
-    auto output = torch::empty({bn, c, h, w}, input.type());
-    auto option = torch::TensorOptions().dtype(torch::ScalarType::Bool).device(device);
-    auto is_boundary = torch::empty({bn, c, h, w}, option);
+    auto option1 = torch::TensorOptions().dtype(input.scalar_type()).device(device);
+    auto output = torch::empty({bn, c, h, w}, option1);
+
+    auto option2 = torch::TensorOptions().dtype(torch::ScalarType::Bool).device(device);
+    auto is_boundary = torch::empty({bn, c, h, w}, option2);
 
     const int num_kernels = bn * c * h * w;
     const int num_threads = 1024;
@@ -157,13 +159,15 @@ std::vector<torch::Tensor> interp2x_boundary2d_cuda_forward(
 
 torch::Tensor interp2x_boundary2d_cuda_backward(
     const torch::Tensor& grad_output) {
-    
+
+    torch::Device device = grad_output.device();
     int bn = grad_output.size(0);
     int c = grad_output.size(1);
     int h = (grad_output.size(2) + 1) / 2;
     int w = (grad_output.size(3) + 1) / 2;
 
-    auto grad_input = torch::empty({bn, c, h, w}, grad_output.type());
+    auto option = torch::TensorOptions().dtype(grad_output.scalar_type()).device(device);
+    auto grad_input = torch::empty({bn, c, h, w}, option);
     
     const int num_kernels = bn * c * h * w;
     const int num_threads = 1024;

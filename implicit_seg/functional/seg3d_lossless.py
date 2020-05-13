@@ -14,7 +14,7 @@ class Seg3dLossless(nn.Module):
     def __init__(self, 
                  query_func, b_min, b_max, resolutions,
                  channels=1, balance_value=0.5, device="cuda:0", align_corners=False, 
-                 visualize=False, debug=False, use_cuda_impl=False, **kwargs):
+                 visualize=False, debug=False, use_cuda_impl=False, faster=False, **kwargs):
         """
         align_corners: same with how you process gt. (grid_sample / interpolate) 
         """
@@ -35,6 +35,7 @@ class Seg3dLossless(nn.Module):
         self.visualize = visualize
         self.debug = debug
         self.use_cuda_impl = use_cuda_impl
+        self.faster = faster
 
         for resolution in resolutions:
             assert resolution[0] % 2 == 1 and resolution[1] % 2 == 1, \
@@ -56,8 +57,15 @@ class Seg3dLossless(nn.Module):
             torch.tensor([-1, 0, 1]), torch.tensor([-1, 0, 1]), torch.tensor([-1, 0, 1])
         ])).int().to(self.device).view(3, -1).t() #[27, 3]
 
+        # smooth convs
         self.smooth_conv3x3 = build_smooth_conv3D(
             in_channels=1, out_channels=1, kernel_size=3, padding=1).to(self.device)
+        self.smooth_conv5x5 = build_smooth_conv3D(
+            in_channels=1, out_channels=1, kernel_size=5, padding=2).to(self.device)
+        self.smooth_conv7x7 = build_smooth_conv3D(
+            in_channels=1, out_channels=1, kernel_size=7, padding=3).to(self.device)
+        self.smooth_conv9x9 = build_smooth_conv3D(
+            in_channels=1, out_channels=1, kernel_size=9, padding=4).to(self.device)
 
         # cuda impl
         if self.use_cuda_impl:
@@ -86,6 +94,123 @@ class Seg3dLossless(nn.Module):
         return occupancys
 
     def forward(self, **kwargs):
+        if self.faster:
+            return self._forward_faster(**kwargs)
+        else:
+            return self._forward(**kwargs)
+
+    def _forward_faster(self, **kwargs):
+        """
+        In faster mode, we make following changes to exchange accuracy for speed:
+        1. no conflict checking: 4.88 fps -> 6.56 fps
+        2. smooth_conv9x9 ~ smooth_conv3x3 for different resolution
+        3. last step no examine
+        """
+        final_W = self.resolutions[-1][0]
+        final_H = self.resolutions[-1][1]
+        final_D = self.resolutions[-1][2]
+        
+        for resolution in self.resolutions:
+            W, H, D = resolution
+            stride = (self.resolutions[-1] - 1) / (resolution - 1)
+            
+            # first step
+            if torch.equal(resolution, self.resolutions[0]):
+                coords = self.init_coords.clone() # torch.long 
+                occupancys = self.batch_eval(coords, **kwargs)
+                occupancys = occupancys.view(self.batchsize, self.channels, D, H, W)
+
+                if self.visualize:
+                    self.plot(occupancys, coords, final_D, final_H, final_W)
+                
+                with torch.no_grad():
+                    coords_accum = coords / stride
+
+            # last step
+            elif torch.equal(resolution, self.resolutions[-1]):
+                if self.use_cuda_impl:
+                    occupancys, is_boundary = self.upsampler(occupancys)
+
+                else:
+                    with torch.no_grad():
+                        # here true is correct!
+                        valid = F.interpolate(
+                            (occupancys>0.5).float(), 
+                            size=(D, H, W), mode="trilinear", align_corners=True)
+
+                    # here true is correct!
+                    occupancys = F.interpolate(
+                        occupancys.float(), 
+                        size=(D, H, W), mode="trilinear", align_corners=True)
+
+                    is_boundary = (valid > 0.0) & (valid < 1.0)
+
+            # next steps
+            else:
+                coords_accum *= 2
+
+                if self.use_cuda_impl:
+                    occupancys, is_boundary = self.upsampler(occupancys)
+
+                else:
+                    with torch.no_grad():
+                        # here true is correct!
+                        valid = F.interpolate(
+                            (occupancys>0.5).float(), 
+                            size=(D, H, W), mode="trilinear", align_corners=True)
+
+                    # here true is correct!
+                    occupancys = F.interpolate(
+                        occupancys.float(), 
+                        size=(D, H, W), mode="trilinear", align_corners=True)
+
+                    is_boundary = (valid > 0.0) & (valid < 1.0)
+                
+                with torch.no_grad():
+                    if torch.equal(resolution, self.resolutions[1]):
+                        is_boundary = (self.smooth_conv9x9(is_boundary.float()) > 0)[0, 0]
+                    elif torch.equal(resolution, self.resolutions[2]):
+                        is_boundary = (self.smooth_conv7x7(is_boundary.float()) > 0)[0, 0]
+                    else:
+                        is_boundary = (self.smooth_conv3x3(is_boundary.float()) > 0)[0, 0]
+                    is_boundary[coords_accum[0, :, 2],
+                                coords_accum[0, :, 1], 
+                                coords_accum[0, :, 0]] = False
+                    point_coords = is_boundary.permute(2, 1, 0).nonzero().unsqueeze(0)
+                    point_indices = (
+                        point_coords[:, :, 2] * H * W + 
+                        point_coords[:, :, 1] * W + 
+                        point_coords[:, :, 0])
+
+                    R, C, D, H, W = occupancys.shape
+                    
+                    # inferred value
+                    coords = point_coords * stride
+
+                if coords.size(1) == 0:
+                    continue
+                occupancys_topk = self.batch_eval(coords, **kwargs)
+                
+                # put mask point predictions to the right places on the upsampled grid.
+                R, C, D, H, W = occupancys.shape
+                point_indices = point_indices.unsqueeze(1).expand(-1, C, -1)
+                occupancys = (
+                    occupancys.reshape(R, C, D * H * W)
+                    .scatter_(2, point_indices, occupancys_topk)
+                    .view(R, C, D, H, W)
+                )
+
+                with torch.no_grad():
+                    voxels = coords / stride
+                    coords_accum = torch.cat([
+                        voxels, 
+                        coords_accum
+                    ], dim=1).unique(dim=1)
+        
+        return occupancys
+
+    
+    def _forward(self, **kwargs):
         """
         output occupancy field would be:
         (bz, C, res, res)
@@ -119,7 +244,7 @@ class Seg3dLossless(nn.Module):
 
                 if self.use_cuda_impl:
                     occupancys, is_boundary = self.upsampler(occupancys)
-
+                    
                 else:
                     with torch.no_grad():
                         # here true is correct!
