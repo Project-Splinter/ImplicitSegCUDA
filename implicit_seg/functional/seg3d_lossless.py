@@ -70,7 +70,7 @@ class Seg3dLossless(nn.Module):
         # cuda impl
         if self.use_cuda_impl:
             from .interp2x_boundary3d import Interp2xBoundary3d
-            self.upsampler = Interp2xBoundary3d()
+            self.upsampler = Interp2xBoundary3d().to(self.device)
 
     def batch_eval(self, coords, **kwargs):
         """
@@ -129,7 +129,7 @@ class Seg3dLossless(nn.Module):
             # last step
             elif torch.equal(resolution, self.resolutions[-1]):
                 if self.use_cuda_impl:
-                    occupancys, is_boundary = self.upsampler(occupancys)
+                    occupancys, is_boundary = self.upsampler(occupancys.contiguous())
 
                 else:
                     with torch.no_grad():

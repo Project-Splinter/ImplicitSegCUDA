@@ -31,7 +31,8 @@ resolutions = [
     (128+1, 320+1, 128+1),
 ]
 align_corners = False
-device = "cuda:1"
+# FIXME: if use 'cuda:1' with --use_cuda_impl, it will very slow
+device = "cuda:0" 
 
 def query_func(tensor, points):
     """
