@@ -276,8 +276,8 @@ class Seg3dLossless(nn.Module):
                         is_boundary[shadow] = False
                         is_boundary = is_boundary[0, 0]
                     else:
-                        # is_boundary = (self.smooth_conv3x3(is_boundary.float()) > 0)[0, 0]
-                        is_boundary = is_boundary[0, 0]
+                        is_boundary = (self.smooth_conv3x3(is_boundary.float()) > 0)[0, 0]
+                        # is_boundary = is_boundary[0, 0]
 
                     is_boundary[coords_accum[0, :, 2],
                                 coords_accum[0, :, 1], 
