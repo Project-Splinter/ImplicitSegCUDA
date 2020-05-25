@@ -269,7 +269,7 @@ class Seg3dLossless(nn.Module):
                     if self.use_shadow and torch.equal(resolution, self.resolutions[-1]):
                         # larger z means smaller depth here
                         depth_res = resolution[2].item()
-                        depth_index = torch.linspace(0, depth_res-1, steps=depth_res).to(self.device)
+                        depth_index = torch.linspace(0, depth_res-1, steps=depth_res).to(occupancys.device)
                         depth_index_max = torch.max( 
                             (occupancys > self.balance_value) * (depth_index + 1), dim=-1, keepdim=True)[0] - 1
                         shadow = depth_index < depth_index_max
