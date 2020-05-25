@@ -14,7 +14,8 @@ class Seg3dLossless(nn.Module):
     def __init__(self, 
                  query_func, b_min, b_max, resolutions,
                  channels=1, balance_value=0.5, device="cuda:0", align_corners=False, 
-                 visualize=False, debug=False, use_cuda_impl=False, faster=False, **kwargs):
+                 visualize=False, debug=False, use_cuda_impl=False, faster=False, 
+                 use_shadow=False, **kwargs):
         """
         align_corners: same with how you process gt. (grid_sample / interpolate) 
         """
@@ -36,6 +37,7 @@ class Seg3dLossless(nn.Module):
         self.debug = debug
         self.use_cuda_impl = use_cuda_impl
         self.faster = faster
+        self.use_shadow = use_shadow
 
         for resolution in resolutions:
             assert resolution[0] % 2 == 1 and resolution[1] % 2 == 1, \
@@ -135,7 +137,7 @@ class Seg3dLossless(nn.Module):
                     with torch.no_grad():
                         # here true is correct!
                         valid = F.interpolate(
-                            (occupancys>0.5).float(), 
+                            (occupancys>self.balance_value).float(), 
                             size=(D, H, W), mode="trilinear", align_corners=True)
 
                     # here true is correct!
@@ -156,7 +158,7 @@ class Seg3dLossless(nn.Module):
                     with torch.no_grad():
                         # here true is correct!
                         valid = F.interpolate(
-                            (occupancys>0.5).float(), 
+                            (occupancys>self.balance_value).float(), 
                             size=(D, H, W), mode="trilinear", align_corners=True)
 
                     # here true is correct!
@@ -224,6 +226,9 @@ class Seg3dLossless(nn.Module):
         for resolution in self.resolutions:
             W, H, D = resolution
             stride = (self.resolutions[-1] - 1) / (resolution - 1)
+
+            if self.visualize:
+                this_stage_coords = []
             
             # first step
             if torch.equal(resolution, self.resolutions[0]):
@@ -237,7 +242,7 @@ class Seg3dLossless(nn.Module):
                 with torch.no_grad():
                     coords_accum = coords / stride
                     calculated[coords[0, :, 2], coords[0, :, 1], coords[0, :, 0]] = True
-
+            
             # next steps
             else:
                 coords_accum *= 2
@@ -249,7 +254,7 @@ class Seg3dLossless(nn.Module):
                     with torch.no_grad():
                         # here true is correct!
                         valid = F.interpolate(
-                            (occupancys>0.5).float(), 
+                            (occupancys>self.balance_value).float(), 
                             size=(D, H, W), mode="trilinear", align_corners=True)
 
                     # here true is correct!
@@ -260,7 +265,20 @@ class Seg3dLossless(nn.Module):
                     is_boundary = (valid > 0.0) & (valid < 1.0)
                 
                 with torch.no_grad():
-                    is_boundary = (self.smooth_conv3x3(is_boundary.float()) > 0)[0, 0]
+                    # TODO
+                    if self.use_shadow and torch.equal(resolution, self.resolutions[-1]):
+                        # larger z means smaller depth here
+                        depth_res = resolution[2].item()
+                        depth_index = torch.linspace(0, depth_res-1, steps=depth_res).to(self.device)
+                        depth_index_max = torch.max( 
+                            (occupancys > self.balance_value) * (depth_index + 1), dim=-1, keepdim=True)[0] - 1
+                        shadow = depth_index < depth_index_max
+                        is_boundary[shadow] = False
+                        is_boundary = is_boundary[0, 0]
+                    else:
+                        # is_boundary = (self.smooth_conv3x3(is_boundary.float()) > 0)[0, 0]
+                        is_boundary = is_boundary[0, 0]
+
                     is_boundary[coords_accum[0, :, 2],
                                 coords_accum[0, :, 1], 
                                 coords_accum[0, :, 0]] = False
@@ -281,6 +299,7 @@ class Seg3dLossless(nn.Module):
                 if coords.size(1) == 0:
                     continue
                 occupancys_topk = self.batch_eval(coords, **kwargs)
+                this_stage_coords.append(coords)
                 
                 # put mask point predictions to the right places on the upsampled grid.
                 R, C, D, H, W = occupancys.shape
@@ -309,6 +328,9 @@ class Seg3dLossless(nn.Module):
                     calculated[coords[0, :, 2], coords[0, :, 1], coords[0, :, 0]] = True
 
                 while conflicts.sum() > 0:
+                    if self.use_shadow and torch.equal(resolution, self.resolutions[-1]):
+                        break
+                    
                     with torch.no_grad():
                         conflicts_coords = coords[0, conflicts, :]
 
@@ -355,7 +377,8 @@ class Seg3dLossless(nn.Module):
                     if coords.size(1) == 0:
                         break
                     occupancys_topk = self.batch_eval(coords, **kwargs)
-                    
+                    this_stage_coords.append(coords)
+
                     with torch.no_grad():
                         # conflicts
                         conflicts = (
@@ -378,7 +401,11 @@ class Seg3dLossless(nn.Module):
                             coords_accum
                         ], dim=1).unique(dim=1)
                         calculated[coords[0, :, 2], coords[0, :, 1], coords[0, :, 0]] = True
-
+                
+                if self.visualize:
+                    this_stage_coords = torch.cat(this_stage_coords, dim=1)
+                    self.plot(occupancys, this_stage_coords, final_D, final_H, final_W)
+                    
         return occupancys
 
     def plot(self, occupancys, coords, final_D, final_H, final_W, title='', **kwargs):

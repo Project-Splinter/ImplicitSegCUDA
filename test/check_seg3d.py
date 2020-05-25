@@ -28,7 +28,7 @@ resolutions = [
     (16+1, 40+1, 16+1),
     (32+1, 80+1, 32+1),
     (64+1, 160+1, 64+1),
-    (128+1, 320+1, 128+1),
+    # (128+1, 320+1, 128+1),
 ]
 align_corners = False
 # FIXME: if use 'cuda:1' with --use_cuda_impl, it will very slow
@@ -107,6 +107,7 @@ else:
 gt = F.interpolate(
     query_sdfs, (final_D, final_H, final_W), mode="trilinear", align_corners=align_corners)
 if args.vis or args.debug:
+    plot_mask3D(sdfs[0, 0].to("cpu"), title="pred")
     plot_mask3D(gt[0, 0].to("cpu"), title="gt")
 
 intersection = (sdfs > 0.) & (gt > 0.)

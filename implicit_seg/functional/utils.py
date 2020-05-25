@@ -72,7 +72,7 @@ def plot_mask3D(
         pc = vtkplotter.Points(point_coords, r=point_marker_size, c='red')
         vis_list.append(pc)
         
-    vp.show(*vis_list, bg="white", axes=1, interactive=interactive)
+    vp.show(*vis_list, bg="white", axes=1, interactive=interactive, azimuth=30, elevation=30)
 
 def create_grid3D(min, max, steps, device="cuda:0"):
     if type(min) is int:
