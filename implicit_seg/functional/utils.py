@@ -1,4 +1,7 @@
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
 import matplotlib.pyplot as plt
 
 def plot_mask2D(
@@ -69,6 +72,14 @@ def plot_mask3D(
     
     if point_coords is not None:
         point_coords = torch.stack(point_coords, 1).to("cpu").numpy()
+        
+        # import numpy as np
+        # select_x = np.logical_and(point_coords[:, 0] >= 16, point_coords[:, 0] <= 112)
+        # select_y = np.logical_and(point_coords[:, 1] >= 48, point_coords[:, 1] <= 272)
+        # select_z = np.logical_and(point_coords[:, 2] >= 16, point_coords[:, 2] <= 112)
+        # select = np.logical_and(np.logical_and(select_x, select_y), select_z)
+        # point_coords = point_coords[select, :]
+
         pc = vtkplotter.Points(point_coords, r=point_marker_size, c='red')
         vis_list.append(pc)
         
@@ -102,6 +113,37 @@ def create_grid2D(min, max, steps, device="cuda:0"):
     coords = torch.stack([gridW, girdH]) # [2, steps[0], steps[1]]
     coords = coords.view(2, -1).t() # [N, 2]
     return coords
+
+class SmoothConv2D(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3):
+        super().__init__()
+        assert kernel_size % 2 == 1, "kernel_size for smooth_conv must be odd: {3, 5, ...}"
+        self.padding = (kernel_size - 1) // 2 
+
+        weight = torch.ones(
+            (in_channels, out_channels, kernel_size, kernel_size), 
+            dtype=torch.float32
+        ) / (kernel_size**2)
+        self.register_buffer('weight', weight)
+        
+    def forward(self, input):
+        return F.conv2d(input, self.weight, padding=self.padding)
+
+
+class SmoothConv3D(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3):
+        super().__init__()
+        assert kernel_size % 2 == 1, "kernel_size for smooth_conv must be odd: {3, 5, ...}"
+        self.padding = (kernel_size - 1) // 2 
+
+        weight = torch.ones(
+            (in_channels, out_channels, kernel_size, kernel_size, kernel_size), 
+            dtype=torch.float32
+        ) / (kernel_size**3)
+        self.register_buffer('weight', weight)
+        
+    def forward(self, input):
+        return F.conv3d(input, self.weight, padding=self.padding)
 
 def build_smooth_conv3D(in_channels=1, out_channels=1, kernel_size=3, padding=1):
     smooth_conv = torch.nn.Conv3d(

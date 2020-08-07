@@ -6,14 +6,14 @@ import os
 
 from .utils import (
     create_grid3D,
-    build_smooth_conv3D,
     plot_mask3D,
+    SmoothConv3D,
 )
 
 class Seg3dLossless(nn.Module):
     def __init__(self, 
                  query_func, b_min, b_max, resolutions,
-                 channels=1, balance_value=0.5, device="cuda:0", align_corners=False, 
+                 channels=1, balance_value=0.5, align_corners=False, 
                  visualize=False, debug=False, use_cuda_impl=False, faster=False, 
                  use_shadow=False, **kwargs):
         """
@@ -21,14 +21,13 @@ class Seg3dLossless(nn.Module):
         """
         super().__init__()
         self.query_func = query_func
-        self.b_min = torch.tensor(b_min).float().to(device).unsqueeze(1) #[bz, 1, 3]
-        self.b_max = torch.tensor(b_max).float().to(device).unsqueeze(1) #[bz, 1, 3]
+        self.register_buffer('b_min', torch.tensor(b_min).float().unsqueeze(1)) #[bz, 1, 3]
+        self.register_buffer('b_max', torch.tensor(b_max).float().unsqueeze(1)) #[bz, 1, 3]
         if type(resolutions[0]) is int:
             resolutions = torch.tensor([(res, res, res) for res in resolutions])
         else:
             resolutions = torch.tensor(resolutions)
-        self.resolutions = resolutions.to(device)
-        self.device = device
+        self.register_buffer('resolutions', resolutions)
         self.batchsize = self.b_min.size(0); assert self.batchsize == 1
         self.balance_value = balance_value
         self.channels = channels; assert self.channels == 1
@@ -44,35 +43,33 @@ class Seg3dLossless(nn.Module):
             f"resolution {resolution} need to be odd becuase of align_corner." 
 
         # init first resolution
-        self.init_coords = create_grid3D(
-            0, resolutions[-1]-1, steps=resolutions[0], device=self.device) #[N, 3]
-        self.init_coords = self.init_coords.unsqueeze(0).repeat(
+        init_coords = create_grid3D(
+            0, resolutions[-1]-1, steps=resolutions[0], device="cpu") #[N, 3]
+        init_coords = init_coords.unsqueeze(0).repeat(
             self.batchsize, 1, 1) #[bz, N, 3]
+        self.register_buffer('init_coords', init_coords)
 
         # some useful tensors
-        self.calculated = torch.zeros((self.resolutions[-1][2],
-                                       self.resolutions[-1][1],
-                                       self.resolutions[-1][0]), 
-                                       dtype=torch.bool, device=self.device)
+        calculated = torch.zeros(
+            (self.resolutions[-1][2], self.resolutions[-1][1], self.resolutions[-1][0]), 
+            dtype=torch.bool)
+        self.register_buffer('calculated', calculated)
 
-        self.gird8_offsets = torch.stack(torch.meshgrid([
+        gird8_offsets = torch.stack(torch.meshgrid([
             torch.tensor([-1, 0, 1]), torch.tensor([-1, 0, 1]), torch.tensor([-1, 0, 1])
-        ])).int().to(self.device).view(3, -1).t() #[27, 3]
+        ])).int().view(3, -1).t() #[27, 3]
+        self.register_buffer('gird8_offsets', gird8_offsets)
 
         # smooth convs
-        self.smooth_conv3x3 = build_smooth_conv3D(
-            in_channels=1, out_channels=1, kernel_size=3, padding=1).to(self.device)
-        self.smooth_conv5x5 = build_smooth_conv3D(
-            in_channels=1, out_channels=1, kernel_size=5, padding=2).to(self.device)
-        self.smooth_conv7x7 = build_smooth_conv3D(
-            in_channels=1, out_channels=1, kernel_size=7, padding=3).to(self.device)
-        self.smooth_conv9x9 = build_smooth_conv3D(
-            in_channels=1, out_channels=1, kernel_size=9, padding=4).to(self.device)
+        self.smooth_conv3x3 = SmoothConv3D(in_channels=1, out_channels=1, kernel_size=3)
+        self.smooth_conv5x5 = SmoothConv3D(in_channels=1, out_channels=1, kernel_size=5)
+        self.smooth_conv7x7 = SmoothConv3D(in_channels=1, out_channels=1, kernel_size=7)
+        self.smooth_conv9x9 = SmoothConv3D(in_channels=1, out_channels=1, kernel_size=9)
 
         # cuda impl
         if self.use_cuda_impl:
             from .interp2x_boundary3d import Interp2xBoundary3d
-            self.upsampler = Interp2xBoundary3d().to(self.device)
+            self.upsampler = Interp2xBoundary3d()
 
     def batch_eval(self, coords, **kwargs):
         """
@@ -121,6 +118,11 @@ class Seg3dLossless(nn.Module):
                 coords = self.init_coords.clone() # torch.long 
                 occupancys = self.batch_eval(coords, **kwargs)
                 occupancys = occupancys.view(self.batchsize, self.channels, D, H, W)
+                if (occupancys > 0.5).sum() == 0:
+                    # return F.interpolate(
+                    #     occupancys, size=(final_D, final_H, final_W), 
+                    #     mode="linear", align_corners=True)
+                    return None
 
                 if self.visualize:
                     self.plot(occupancys, coords, final_D, final_H, final_W)
@@ -145,7 +147,8 @@ class Seg3dLossless(nn.Module):
                         occupancys.float(), 
                         size=(D, H, W), mode="trilinear", align_corners=True)
 
-                    is_boundary = (valid > 0.0) & (valid < 1.0)
+                    # is_boundary = (valid > 0.0) & (valid < 1.0)
+                    is_boundary = valid == 0.5
 
             # next steps
             else:
@@ -299,7 +302,8 @@ class Seg3dLossless(nn.Module):
                 if coords.size(1) == 0:
                     continue
                 occupancys_topk = self.batch_eval(coords, **kwargs)
-                this_stage_coords.append(coords)
+                if self.visualize:
+                    this_stage_coords.append(coords)
                 
                 # put mask point predictions to the right places on the upsampled grid.
                 R, C, D, H, W = occupancys.shape
@@ -377,7 +381,8 @@ class Seg3dLossless(nn.Module):
                     if coords.size(1) == 0:
                         break
                     occupancys_topk = self.batch_eval(coords, **kwargs)
-                    this_stage_coords.append(coords)
+                    if self.visualize:
+                        this_stage_coords.append(coords)
 
                     with torch.no_grad():
                         # conflicts

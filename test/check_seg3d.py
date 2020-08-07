@@ -28,7 +28,7 @@ resolutions = [
     (16+1, 40+1, 16+1),
     (32+1, 80+1, 32+1),
     (64+1, 160+1, 64+1),
-    # (128+1, 320+1, 128+1),
+    (128+1, 320+1, 128+1),
 ]
 align_corners = False
 # FIXME: if use 'cuda:1' with --use_cuda_impl, it will very slow
@@ -86,6 +86,7 @@ elif args.mode == 'topk':
         use_cuda_impl=args.use_cuda_impl, 
     )
 
+engine = engine.to(device)
 # gt
 query_sdfs = torch.load(args.voxel).to(device).float() # [1, 1, H, W, D]
 
