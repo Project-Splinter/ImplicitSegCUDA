@@ -17,9 +17,9 @@ ext_modules=[
 
 setup(
     name='implicit_seg',
-    url='https://github.com/liruilong940607/ImplicitSegCUDA',
+    url='https://github.com/Project-Splinter/ImplicitSegCUDA',
     description='A Pytorch Segmentation module through implicit way (support 2d and 3d)', 
-    version='0.0.1',
+    version='0.0.2',
     author='Ruilong Li',
     author_email='ruilongl@usc.edu',    
     license='MIT License',
